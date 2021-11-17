@@ -1,0 +1,13 @@
+(executables
+ (names genfft tagless_test tagless_ntt_staged tagless_fft_staged csp_issue tagless_vector_test test_montgomery tagless_unroll_test tagless_c_test tagless_ntt_c mul_half_test interval_abstract symbolic z3_verify)
+ (ocamlopt_flags (:standard -I +compiler-libs ocamlcommon.cmxa dynlink.cmxa codelib.cmx runnative.cmx lifts.cmx))
+ (ocamlc_flags (:standard -I +compiler-libs ocamlcommon.cma ocamlbytecomp.cma ocamltoplevel.cma metalib.cma berstart.cmo))
+ (libraries
+   base
+   genlet
+   benchmark
+   ctypes.foreign
+   integers
+   z3
+  )
+)

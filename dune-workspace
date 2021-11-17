@@ -1,0 +1,7 @@
+(lang dune 2.0)
+(context
+  (opam
+    (switch 4.11.1+BER)
+    (merlin false)
+    )
+  )
