@@ -160,6 +160,27 @@ let get_poly_coeff p =
  *   let p = mul' (mul' (add' (Sym "x0") (Sym "x1")) (Const 5)) (Const 6) in
  *   Printf.printf "%s\n" (string_of_exp (poly_simplify p)) *)
 
+module IntegerModulo(Param: sig val q: int val omega: int end) = struct
+  type t = Int.t
+  let q = Param.q
+  let omega = Param.omega
+  let add x y = (Int.add x y) mod q
+  let mul x y = (Int.mul x y) mod q
+  let sub x y = (Int.sub (Int.add (q * 3) x) y) mod q
+  let zero = 0
+  let one = 1
+
+  let primitive_root_power _ j =
+    let rec power i acc =
+      if i = 0 then acc
+      else
+        let update = mul acc omega in
+        power (i - 1) update
+    in
+    power j 1
+
+end
+
 let test_poly_coefficients =
   let size = 1024 in
   let module R_NTT = FFT_lazy_gen(R_Array)(D_symbolic) in
@@ -173,7 +194,7 @@ let test_poly_coefficients =
       let p = arr.(idx) in
       (* Printf.printf "%s\n" (string_of_exp (D_symbolic.poly_simplify p)); *)
       let coeffs_fft = get_poly_coeff p in
-      let module Prim_roots = Fft_domain.Primitive_roots(Fft_types.IntegerModulo(NewHope_param)) in
+      let module Prim_roots = Fft_domain.Primitive_roots(IntegerModulo(NewHope_param)) in
       let n = NewHope_param.n in
       let coeffs_dft = Prim_roots.powers n n idx in
       Array.init size (fun i ->

@@ -1,5 +1,4 @@
 open Tagless_types
-open Tagless_unroll
 open Tagless_vectorize
 
 
@@ -304,58 +303,6 @@ module FFT_gen(Lang: Array_lang)(D: Domain with type 'a expr = 'a Lang.expr) = s
                                    (arr_set input (index %+ m_half) (D.sub u t)))))))))
 end
 
-module FFT_unrolled_gen(Lang: Array_lang)(D: Domain with type 'a expr = 'a Lang.expr) = struct
-  open Lang
-  open Sugar(Lang)
-
-  let unroll_factor = 4
-
-  let fft n =
-    let module B_rev = Bit_rev(Lang) in
-    let module Prim_roots = Primitive_roots(D) in
-    let open Unroll(Lang)(struct let factor = unroll_factor end) in
-    let prim_root_powers = Prim_roots.powers_memory_efficient n in
-    let prim_root_powers = arr_init n (fun i -> D.lift (prim_root_powers.(i))) in
-    let input_arr_ty = CArr (D.domain_c_type) in
-    let bit_reverse = B_rev.get_bit_reverse n input_arr_ty () in
-    let num_stage = int_ (Base.Int.floor_log2 n) in
-    let n = int_ n in
-    let fft_stage do_unroll =
-      let fname =
-        if do_unroll then "fft_unrolled"
-        else "fft_rolled" in
-      func2 fname CInt input_arr_ty (fun s input ->
-          let2
-            (one %<< s)
-            ((one %<< (s %- one)) %- one)
-            (fun m coeff_begin ->
-               let m_half = (m %/ two) in
-               for_ zero n m (fun k ->
-                   let inner_body j =
-                     let index = k %+ j in
-                     let omega = arr_get prim_root_powers (coeff_begin %+ j) in
-                     let2
-                       (D.mul omega (arr_get input (index %+ m_half)))
-                       (arr_get input index)
-                       (fun t u ->
-                          seq
-                            (arr_set input index (D.add u t))
-                            (arr_set input (index %+ m_half) (D.sub u t))) in
-                   if do_unroll then
-                     for_unroll zero m_half one (fun j -> inner_body j)
-                   else
-                     for_ zero m_half one (fun j -> inner_body j)))) in
-    let fft_scalar = fft_stage false in
-    let fft_unrolled = fft_stage true in
-    func "fft" input_arr_ty (fun input ->
-        seq4
-          (call bit_reverse input)
-          (call2 fft_scalar (int_ 1) input)
-          (call2 fft_scalar (int_ 2) input)
-          (for_ (int_ 3) (num_stage %+ one) one (fun s ->
-               (call2 fft_unrolled s input))))
-end
-
 module FFT_lazy_gen(Lang: Array_lang)(D: Domain_with_barret with type 'a expr = 'a Lang.expr) = struct
   open Lang
   open Sugar(Lang)
@@ -468,85 +415,6 @@ module FFT_vectorized_gen
                (call fft_funcs.(s - 1) input)))
           (unroll (num_scalar_stage + 1) (num_stage + 1) (fun s ->
                (call fft_funcs.(s - 1) input))))
-end
-
-module FFT_vectorized_emu_gen(Lang: Array_lang)(D: Domain with type 'a expr = 'a Lang.expr) = struct
-  module V_lang = Vectorize_lang_emu(Lang)(D)
-  include FFT_vectorized_gen(Lang)(D)(V_lang)
-end
-
-module FFT_vectorized_unrolled_gen
-    (Lang: Array_lang)
-    (D: Domain with type 'a expr = 'a Lang.expr)
-    (V_lang: Vector_lang with type 'a expr = 'a Lang.expr with type 'a stmt = 'a Lang.stmt with type Vector_domain.t = D.t) = struct
-
-  open Lang
-  open Sugar(Lang)
-  module V_domain = V_lang.Vector_domain
-
-  module Inner_loop(L: Vec with type 'a expr = 'a Lang.expr with type 'a stmt = 'a Lang.stmt) = struct
-    let fft_inner unroll_factor input m_half k prim_root_powers coeff_begin =
-      let open Unroll(L)(struct let factor = unroll_factor end) in
-      let open L in
-      for_unroll zero m_half one (fun j ->
-          let index = k %+ j in
-          let omega = arr_get prim_root_powers (coeff_begin %+ j) in
-          let2
-            (D.mul omega (arr_get input (index %+ m_half)))
-            (arr_get input index)
-            (fun t u ->
-               seq
-                 (arr_set input index (D.add u t))
-                 (arr_set input (index %+ m_half) (D.sub u t))))
-  end
-
-  module Inner_V = Inner_loop(Vectorize(V_lang))
-  module Inner_S = Inner_loop(Scalarize(Lang)(D))
-
-  let vec_len = V_lang.vec_len
-  let max_unroll_factor = 4
-
-  let fft n =
-    let module B_rev = Bit_rev(Lang) in
-    let module Prim_roots = Primitive_roots(D) in
-    let prim_root_powers = Prim_roots.powers_memory_efficient n in
-    let prim_root_powers = arr_init n (fun i -> D.lift (prim_root_powers.(i))) in
-    let input_ty = CArr (D.domain_c_type) in
-    let bit_reverse = B_rev.get_bit_reverse n input_ty () in
-    let num_stage = Base.Int.floor_log2 n in
-    let n = int_ n in
-    let gen_fft do_vectorize unroll_factor =
-      let fname_prefix =
-        if do_vectorize then "fft_vectorized"
-        else "fft_scalar" in
-      let fname = Printf.sprintf "%s_unroll_%d" fname_prefix unroll_factor in
-      func2 fname CInt input_ty (fun s input ->
-          let2
-            (one %<< s)
-            ((one %<< (s %- one)) %- one)
-            (fun m coeff_begin ->
-               let m_half = (m %/ two) in
-               for_ zero n m (fun k ->
-                   if do_vectorize then
-                     Inner_V.fft_inner unroll_factor input m_half k prim_root_powers coeff_begin
-                   else
-                     Inner_S.fft_inner unroll_factor input m_half k prim_root_powers coeff_begin))) in
-    let gen_fft_stage s =
-      let m_half = Int.shift_left 1 (s - 1) in
-      let do_vectorize =
-        if m_half < vec_len then false else true in
-      let unroll_factor =
-        min max_unroll_factor (max 1 (m_half / vec_len)) in
-      gen_fft do_vectorize unroll_factor in
-    let fft_init_stages = Array.init num_stage (fun s -> gen_fft_stage (s + 1)) in
-    let fft_stage_opt = gen_fft true max_unroll_factor in
-    let num_init_stage =  Base.Int.floor_log2 (V_lang.vec_len * max_unroll_factor) in
-    func "fft" input_ty (fun input ->
-        seq3
-          (call bit_reverse input)
-          (unroll 0 num_init_stage (fun s -> (call2 fft_init_stages.(s) (int_ (s+1)) input)))
-          (unroll (num_init_stage +1) (num_stage + 1) (fun s ->
-               (call2 fft_stage_opt (int_ s) input))))
 end
 
 module FFT_vectorized_with_shuffle_gen
