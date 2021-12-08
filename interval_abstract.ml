@@ -25,7 +25,8 @@ let get_output_bounds size =
 
 let test_ntt_R =
   let size = 1024 in
-  let arr = get_output_bounds size in
-  ignore(Array.init size (fun i ->
-      let lo, hi = arr.(i) in
-      Printf.printf "lo = %d, hi = %d\n" lo hi))
+  let _ = get_output_bounds size in
+  (* ignore(Array.init size (fun i -> *)
+  (*     let lo, hi = arr.(i) in *)
+  (*     Printf.printf "idx = %d, lo = %d, hi = %d\n" i lo hi)); *)
+  Printf.printf "ok\n"

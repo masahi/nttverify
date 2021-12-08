@@ -190,7 +190,7 @@ let test_poly_coefficients =
       (fun () -> Sym vname))) () in
   let fn = (R_NTT.fft size) () in
   fn arr;
-  Array.init size (fun idx ->
+  ignore(Array.init size (fun idx ->
       let p = arr.(idx) in
       (* Printf.printf "%s\n" (string_of_exp (D_symbolic.poly_simplify p)); *)
       let coeffs_fft = get_poly_coeff p in
@@ -206,5 +206,6 @@ let test_poly_coefficients =
               coeff_fft + NewHope_param.q
             end
             else coeff_fft in
-          assert (coeff_dft = coeff_fft)))
-          (* Printf.printf "%d: %d, %d\n" i coeff_fft coeff_dft); *)
+          assert (coeff_dft = coeff_fft))));
+  (* Printf.printf "%d: %d, %d\n" i coeff_fft coeff_dft); *)
+  Printf.printf "ok\n"

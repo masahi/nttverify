@@ -1,5 +1,25 @@
-Compile and run with AVX2 target, and compare the output with DFT reference:
+Section 4: Interval analysis on NTT program
+--------------------------------------
+```
+$ dune build interval_abstract.exe
+$ _build/default/interval_abstract.exe
+ok
+```
 
-$ dune build tagless_ntt_c.exe
+Section 5.3: Verifying modular-reduction algorithms
+--------------------------------------
+```
+$ dune build z3_verify.exe
+$ _build/default/z3_verify.exe
+Verifying Barrett reduction impl by Z3...
+Verifying Montgomery multiplication impl by Z3... (this is slow)
+ok
+```
 
-$ _build/4.11.1+BER/tagless_ntt_c.exe
+Section 5.4: Proving correctness of the simplifid NTT program
+----------------------------------------------------
+```
+$ dune build symbolic.exe
+$ _build/default/symbolic.exe
+ok
+```

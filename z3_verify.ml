@@ -110,13 +110,21 @@ let prim_root_powers =
   done;
   powers
 
-let test_mul_mod =
+let test_mul_mod () =
   let x = mk_const_s ctx "x" bits in
   Array.iter (fun root ->
-      Printf.printf "Verify_Eqing with y = %d\n" root; flush_all ();
+      (* Printf.printf "Verify_Eqing with y = %d\n" root; flush_all (); *)
       let y = const root in
       let y_mont = mk_extract ctx 15 0 (mk_urem ctx (mk_mul ctx (to_u32 y) (const_32 65536)) (const_32 NewHope_param.q)) in
       let ref_res = mul_red_ref x y in
       let opt_res = montgomery_multiply_reduce x y_mont in
       verify_eq ref_res opt_res)
     prim_root_powers
+
+
+let _ =
+  Printf.printf "Verifying Barrett reduction impl by Z3...\n";
+  test_barrett_reduce ();
+  Printf.printf "Verifying Montgomery multiplication impl by Z3... (this is slow)\n";
+  test_mul_mod ();
+  Printf.printf "ok"

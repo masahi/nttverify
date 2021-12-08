@@ -268,41 +268,6 @@ module Bit_rev(S: Array_lang) = struct
 end
 
 
-module FFT_gen(Lang: Array_lang)(D: Domain with type 'a expr = 'a Lang.expr) = struct
-
-  let fft n =
-    let open Lang in
-    let open Sugar(Lang) in
-    let module B_rev = Bit_rev(Lang) in
-    let module Prim_roots = Primitive_roots(D) in
-    let prim_root_powers = Prim_roots.powers_memory_efficient n in
-    let prim_root_powers = arr_init n (fun i -> D.lift (prim_root_powers.(i))) in
-    let input_ty = CArr (D.domain_c_type) in
-    let num_stage = int_ (Base.Int.floor_log2 n) in
-    let bit_reverse = B_rev.get_bit_reverse n input_ty () in
-    let n = int_ n in
-    func "fft" input_ty (fun input ->
-        seq
-          (ignore_ (app bit_reverse input))
-          (for_ one (num_stage %+ one) one (fun s ->
-               let2
-                 (one %<< s)
-                 ((one %<< (s %- one)) %- one)
-                 (fun m coeff_begin ->
-                    let m_half = (m %/ two) in
-                    for_ zero n m (fun k ->
-                        for_ zero m_half one (fun j ->
-                            let index = k %+ j in
-                            let omega = arr_get prim_root_powers (coeff_begin %+ j) in
-                            let2
-                              (D.mul (arr_get input (index %+ m_half)) omega)
-                              (arr_get input index)
-                              (fun t u ->
-                                 seq
-                                   (arr_set input index (D.add u t))
-                                   (arr_set input (index %+ m_half) (D.sub u t)))))))))
-end
-
 module FFT_lazy_gen(Lang: Array_lang)(D: Domain_with_barret with type 'a expr = 'a Lang.expr) = struct
   open Lang
   open Sugar(Lang)
@@ -357,65 +322,6 @@ module FFT_lazy_gen(Lang: Array_lang)(D: Domain_with_barret with type 'a expr = 
                (call (fft_stage s) input))))
 end
 
-module FFT_vectorized_gen
-    (Lang: Array_lang)
-    (D: Domain with type 'a expr = 'a Lang.expr)
-    (V_lang: Vector_lang with type 'a expr = 'a Lang.expr with type 'a stmt = 'a Lang.stmt with type Vector_domain.t = D.t) = struct
-  open Lang
-  open Sugar(Lang)
-  module V_domain = V_lang.Vector_domain
-
-  module Inner_loop(L: Vec with type 'a expr = 'a Lang.expr with type 'a stmt = 'a Lang.stmt) = struct
-    let fft_inner input m_half k prim_root_powers coeff_begin =
-      let open L in
-      for_ (int_ 0) m_half (int_ 1) (fun j ->
-          let index = k %+ j in
-          let omega = arr_get prim_root_powers (coeff_begin %+ j) in
-          let2
-            (D.mul (arr_get input (index %+ m_half)) omega)
-            (arr_get input index)
-            (fun t u ->
-               seq
-                 (arr_set input index (D.add u t))
-                 (arr_set input (index %+ m_half) (D.sub u t))))
-  end
-
-  module V = Vectorize(V_lang)
-  module Inner_V = Inner_loop(V)
-  module Inner_S = Inner_loop(Scalarize(Lang)(D))
-
-  let fft n =
-    let module B_rev = Bit_rev(Lang) in
-    let module Prim_roots = Primitive_roots(D) in
-    let prim_root_powers, coeff_begins = Prim_roots.powers_for_vectorized n V_lang.vec_len in
-    let prim_root_powers = arr_init (Array.length prim_root_powers) (fun i -> D.lift (prim_root_powers.(i))) in
-    let input_ty = CArr (D.domain_c_type) in
-    let fft_stage s =
-      let coeff_begin = int_ coeff_begins.(s - 1) in
-      let m = (Int.shift_left 1 s) in
-      let m_half = int_ (m / 2) in
-      let vectorize = (m / 2) >= V_lang.vec_len in
-      let fname =
-        if vectorize then Printf.sprintf "fft%d_vectorized" s
-        else Printf.sprintf "fft%d_scalar" s in
-      func fname input_ty (fun input ->
-          for_ zero (int_ n) (int_ m) (fun k ->
-              if vectorize then
-                Inner_V.fft_inner input m_half k prim_root_powers coeff_begin
-              else
-                Inner_S.fft_inner input m_half k prim_root_powers coeff_begin)) in
-    let num_stage = Base.Int.floor_log2 n in
-    let num_scalar_stage = Base.Int.floor_log2 V_lang.vec_len in
-    let bit_reverse = B_rev.get_bit_reverse n input_ty () in
-    let fft_funcs = Array.init num_stage (fun s -> fft_stage (s + 1)) in
-    func "fft" input_ty (fun input ->
-        seq3
-          (call bit_reverse input)
-          (unroll 1 (num_scalar_stage + 1) (fun s ->
-               (call fft_funcs.(s - 1) input)))
-          (unroll (num_scalar_stage + 1) (num_stage + 1) (fun s ->
-               (call fft_funcs.(s - 1) input))))
-end
 
 module FFT_vectorized_with_shuffle_gen
     (Lang: Array_lang)
